@@ -133,7 +133,6 @@ Timezone myTZ(myDST, mySTD);
 
 TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abbrev
 
-
 /*
 
   time -> INC -> brightness (5 steps)
@@ -219,12 +218,19 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
 enum mode {time, setH, set10M, set1M, setInt, set24, TZ} mode;
 
 //Arduino pins
-#define BMode 3
-#define BInc  4
-#define AC    2
+#define BMenu A0
+#define BInc  A1
+#define AC    A2
 
 const uint8_t rowPins[ROWS] = {9, 10, 11};
 const uint8_t colPins[COLUMNS] = {5, 6, 7, 8, A0, A1, A2, 12, 13};
+
+#include "OneButton.h"
+
+// connect the buttons
+OneButton buttonMenu(BMenu,true);
+OneButton buttonInc(BInc,true);
+
 
 //RTC
 #define DS3231_ADDR 0x68
@@ -538,7 +544,7 @@ uint8_t readSettings() {
 void setup() {
   uint16_t curr_hour, curr_minute;
 
-  pinMode(BMode, INPUT);
+  pinMode(BMenu, INPUT);
   pinMode(BInc, INPUT);
   for (uint8_t i = 0; i < ROWS; i++) {
     pinMode(rowPins[i], OUTPUT); digitalWrite(rowPins[i], HIGH);
@@ -552,7 +558,7 @@ void setup() {
   Serial.begin(38400);
   Serial.println(F("Tix clock v0.02"));
 
-  // read settings from eeprom - i there
+  // read settings from eeprom - if there
   if (!readSettings()) {
     settings.mode24 = true; // clock mode 24h or 12h
     settings.intensity = INTLEVELS; // 5 levels of intensity, 0=off
@@ -595,12 +601,21 @@ void setup() {
   Timer1.initialize(500);
   Timer1.attachInterrupt(updateDisplay);
 
-    drawTime(3969); delay(500); //while (1){};
+  drawTime(3969); delay(500); //while (1){};
+  drawTime(3868); delay(400);
+  drawTime(3767); delay(300);
+  drawTime(3666); delay(200);
+  drawTime(3555); delay(150);
+  drawTime(3444); delay(100);
+  drawTime(3333); delay(80);
+  drawTime(2222); delay(60);
+  drawTime(1111); delay(40);
+  displayOff();  delay(100);
   //  drawTime(2359);delay(5000);
   //  drawTime(1959);delay(3000);
   //  drawTime(539);delay(3000);
 
-  if (digitalRead(BMode) == LOW) {
+  if (digitalRead(BMenu) == LOW) {
     mode = set24;
   } else {
     mode = time;
@@ -613,9 +628,45 @@ void setup() {
   curr_minute = minute();
 
   drawTime(curr_hour * 100 + curr_minute);
+
+// link the doubleclick function to be called on a doubleclick event.   
+  buttonMenu.attachClick(menuClick);
+  buttonMenu.attachDoubleClick(menuDoubleClick);
+  buttonMenu.attachLongPressStart(menuPressStart);
+  buttonMenu.attachDuringLongPress(menuDuringPress);
+  buttonMenu.attachLongPressStop(menuPressStop);
+  buttonInc.attachClick(incClick);
+  
+} // setup
+
+void menuClick(){
+  Serial.println(F("in menu Click"));
 }
 
-// setup interrupt driven
+void menuDoubleClick(){
+  Serial.println(F("in menu DoubleClick"));
+}
+
+void menuPressStart(){
+  Serial.println(F("in menu PressStart"));
+}
+
+void menuDuringPress(){
+  static long lastsecond;
+  if (int(millis()/1000) != lastsecond){
+    Serial.println(F("in menu DuringPress"));
+    lastsecond=int(millis()/1000);
+  }
+}
+
+void menuPressStop(){
+  Serial.println(F("in menu PressStop"));
+}
+
+void incClick(){
+  Serial.println(F("in inc Click"));
+}
+
 
 void loop() {
   static uint8_t last_hour = -1, last_minute = -1, last_second = -1;
@@ -623,12 +674,17 @@ void loop() {
   static unsigned long lastUpdate = 0;
   time_t utc_time,local_time;
 
+  // keep watching the push button:
+  buttonMenu.tick();
+  buttonInc.tick();
   
   utc_time = now();
 
   local_time = myTZ.toLocal(utc_time, &tcr);
-//TODO - 12/24h clock
   curr_hour = hour(local_time);
+  if (!settings.mode24)
+    if (curr_hour>12)
+      curr_hour-=12;
   curr_minute = minute(local_time);
   curr_second = second(local_time);
 
