@@ -174,38 +174,22 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
   INC now cycles through the interval on the right, showing seconds for updates, 1/5/30/60 seconds
 
   ================
-  see below
-  Swap between 12/24h mode
-  power off
-  press and hold "Mode" (set24)
-  power on
-  left 3 bars comes on and it shows 12 or 24 on the right (toggled from whatever was before).
-  while still holding down "Mode" press "inc" to toggle.
-  release "mode" and it start showing the time
-
-  Setting timezone
-
-  power off
-  press and hold "Inc" (setTZ)
-  power on
-  top and bottom left squares comes on and it shows current offset
-  release and pres "Inc", offset will change in 30 min segments
-     it only covers 3/3.5/4/4.5/5/5.5/6 hours, then starts over
-     if you need something else change this code
-  press mode to start showing the time
-
-  ================
   maybe change the above two ones
-  power off
-  press and hold "mode"
-  power on
-  when all squares light up, release mode
-  it is now in 12/24h mode, inc to toggle
-  next mode is daylight saving time, "inc" to toggle
-  press mode once and it goes to timezone - hours
-  press mode and it's timezone minutes 0/30
-  press mode and it's xxx
-  to exit, press and hold mode and inc for 2sec
+  long press "mode"
+    when all squares light up advanced mode is in effect
+  release mode
+   leftmost top LED stays on, right two (minutes) shows 12 or 24 for 12/24h mode
+   inc to toggle
+  click mode for daylight saving time
+    leftmost middle LED comes on, two middle fields shows DL, right is all on or all off
+    "inc" to toggle daylight saving
+  click mode for timezone hours
+    leftmost bottom LED comes on, right lights show "TIZ" for 1sec, then hours like -4 or +5
+    inc to change
+  click mode for timezone minutes
+    leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
+    inc to change
+  click mode again to exit
 
 
   X XXX XX XXX
