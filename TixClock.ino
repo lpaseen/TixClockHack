@@ -27,23 +27,23 @@
    Col5  Col4
 
 
-  pic   arduino pins
-  3      2   AC  (to allow interrupt)
+  PIC   Arduino pins
+   3      2   AC  (to allow interrupt)
   16      3   Mode Button
-  2      4   Inc  Button
+   2      4   Inc  Button
   15      5   col0
   13      6   col1
   12      7   col2
   11      8   col3
-  10     A0  col4
-  9     A1  col5
-  8     A2  col6
-  7     12   col7
-  6     13   col8
+  10     A0   col4
+   9     A1   col5
+   8     A2   col6
+   7     12   col7
+   6     13   col8
     (rows on 9/10/11 to allow PWM)
-  17     9  row0
-  18    10  row1
-  1    11  row2
+  17      9  row0
+  18     10  row1
+   1     11  row2
 
     A3   WWVB input
 
@@ -51,22 +51,22 @@
     A5   I2C SCL
 
 
-   arduino pins
-    2	row0
-    3	row1
-    4	row2
+   Arduino pins
+    2	A/C (to allow interrupt)
+    3	Mode Button
+    4	Inc Button
     5	col0
     6	col1
     7	col2
     8	col3
-    9	col4
-   10	col5
-   11	col6
+    9	row0
+   10	row1
+   11	row2
    12	col7
    13	col8
-   A0	Mode Button
-   A1	Inc  Button
-   A2	AC
+   A0	col4
+   A1	col5
+   A2	col6
    A3   WWVB input
    A4	I2C sda
    A5	I2C sck
@@ -218,9 +218,9 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
 enum mode {time, setH, set10M, set1M, setInt, set24, TZ} mode;
 
 //Arduino pins
-#define BMenu A0
-#define BInc  A1
-#define AC    A2
+#define BMenu 3
+#define BInc  4
+#define AC    2
 
 const uint8_t rowPins[ROWS] = {9, 10, 11};
 const uint8_t colPins[COLUMNS] = {5, 6, 7, 8, A0, A1, A2, 12, 13};
@@ -653,10 +653,10 @@ void menuPressStart(){
 
 void menuDuringPress(){
   static long lastsecond;
-  if (int(millis()/1000) != lastsecond){
+  //  if (int(millis()/1000) != lastsecond){
     Serial.println(F("in menu DuringPress"));
-    lastsecond=int(millis()/1000);
-  }
+    //    lastsecond=int(millis()/1000);
+    //  }
 }
 
 void menuPressStop(){
@@ -705,9 +705,11 @@ void loop() {
           printTime();
           Serial.println();
         */
+        /*
         intens++;
         if (intens>INTLEVELS)
           intens=1;
+        */
         settings.intensity=levels[intens];
         lastUpdate = millis();
         drawTime(curr_hour * 100 + curr_minute);
