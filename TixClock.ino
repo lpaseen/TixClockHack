@@ -653,10 +653,10 @@ void menuPressStart(){
 
 void menuDuringPress(){
   static long lastsecond;
-  //  if (int(millis()/1000) != lastsecond){
+  if (int(millis()/1000) != lastsecond){
     Serial.println(F("in menu DuringPress"));
-    //    lastsecond=int(millis()/1000);
-    //  }
+    lastsecond=int(millis()/1000);
+  }
 }
 
 void menuPressStop(){
