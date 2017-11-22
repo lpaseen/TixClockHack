@@ -2,7 +2,9 @@
    Tix(tm) clock hack, replaced the PIC16F628 with a small add on board that contains an arduino nano and RTC.
 
    Copyright Peter Sjoberg
-   V0.00
+   License: GPL3
+
+   V0.03 - made the intensity menu work
 
 
    Socket pinouts
@@ -90,24 +92,23 @@
      and 7 cycles respectively.
 
    extrapolated from http://www.pyroelectro.com/tutorials/fading_led_pwm/theory2.html
-   to have 6 levels (5 plus off) it need to be 10 periodes and the levels are
+   to have 6 levels (5 plus off) it need to be 10 periods and the levels are
    0,1,2,4,6,10
 
 */
 
-#define CYCLES 10
 #define INTLEVELS 5
 const uint8_t levels[] = {0, 1, 2, 4, 6, 10};
+#define CYCLES 10
 
 //Display status
 volatile boolean LEDBuffer[ROWS][COLUMNS];
 volatile boolean LEDAssembly[ROWS][COLUMNS];
 volatile uint8_t currentRow = 0;
+volatile static uint8_t cycle = 0;
 
 static uint8_t myHour, myMinute, mySecond;
 static uint8_t myYear, myMonth, myDay;
-static uint8_t cycle = 0;
-static uint8_t intens=INTLEVELS;
 
 #include <EEPROM.h>
 typedef struct {
@@ -118,9 +119,13 @@ typedef struct {
 } Settings_t;
 
 volatile Settings_t settings;
+volatile Settings_t stored_settings;
 
 #include <TimeLib.h>
 #include <Timezone.h> //https://github.com/JChristensen/Timezone
+
+//Timechange rules are to tricky to add to the menu
+//leaving them hardcoded here in the software
 
 //US Eastern Time Zone (New York, Detroit)
 TimeChangeRule myDST = {"EDT", Second, Sun, Mar, 2, -240};    //Daylight time = UTC - 4 hours
@@ -278,7 +283,7 @@ void updateDisplay() {
   }
 
   cycle++;
-  if (cycle == INTLEVELS)
+  if (cycle == CYCLES)
     cycle = 0;
 
   /*
@@ -293,7 +298,7 @@ void updateDisplay() {
   //check the LED for each column
 
   for (uint8_t c = 0; c < COLUMNS; c++) {
-    if (LEDBuffer[currentRow][c] && (settings.intensity - cycle) > 0) {
+    if (LEDBuffer[currentRow][c] && (levels[settings.intensity] - cycle) > 0) {
       digitalWrite(colPins[c], HIGH);
     } else {
       digitalWrite(colPins[c], LOW);
@@ -440,7 +445,9 @@ void drawTime(uint16_t number) {
   m10 = int((number % 100) / 10);
   m1 = int(number % 10);
 
+  Serial.print("Drawing ");
   Serial.print(number, DEC);
+  /*
   Serial.print("=");
   Serial.print(h10, DEC);
   Serial.print(":");
@@ -449,6 +456,7 @@ void drawTime(uint16_t number) {
   Serial.print(m10, DEC);
   Serial.print(":");
   Serial.print(m1, DEC);
+  */
   Serial.println();
 
   drawFrame(0, h10);
@@ -526,7 +534,7 @@ uint8_t readSettings() {
 /****************************************************************/
 /****************************************************************/
 void setup() {
-  uint16_t curr_hour, curr_minute;
+  uint16_t curr_hour, curr_minute,DoDelay;
 
   pinMode(BMenu, INPUT);
   pinMode(BInc, INPUT);
@@ -537,10 +545,13 @@ void setup() {
     pinMode(colPins[i], OUTPUT); digitalWrite(colPins[i], LOW);
   }
 
+  //  pinMode(A4,INPUT_PULLUP);
+  //  pinMode(A5,INPUT_PULLUP);
+
   randomSeed((analogRead(0) + 1) * (analogRead(1) + 1) * (analogRead(2) + 1) * (analogRead(3) + 1) * (analogRead(4) + 1) * (analogRead(5) + 1)); // some may be 0/1023 but hopefully the rest creates some entropy by being a little random.
 
   Serial.begin(38400);
-  Serial.println(F("Tix clock v0.02"));
+  Serial.println(F("Tix clock v0.03"));
 
   // read settings from eeprom - if there
   if (!readSettings()) {
@@ -549,9 +560,7 @@ void setup() {
     settings.updateInterval = 5; // 1/5/30/60 seconds
     saveSettings();
   }
-
-  //  pinMode(A4,INPUT_PULLUP);
-  //  pinMode(A5,INPUT_PULLUP);
+  memcpy(&stored_settings,&settings,sizeof(settings));
 
   if (RTC.chipPresent()) {
     Serial.println(F("No rtc found"));
@@ -585,27 +594,23 @@ void setup() {
   Timer1.initialize(500);
   Timer1.attachInterrupt(updateDisplay);
 
-  drawTime(3969); delay(500); //while (1){};
-  drawTime(3868); delay(400);
-  drawTime(3767); delay(300);
-  drawTime(3666); delay(200);
-  drawTime(3555); delay(150);
-  drawTime(3444); delay(100);
-  drawTime(3333); delay(80);
-  drawTime(2222); delay(60);
-  drawTime(1111); delay(40);
-  displayOff();  delay(100);
-  //  drawTime(2359);delay(5000);
-  //  drawTime(1959);delay(3000);
-  //  drawTime(539);delay(3000);
+  //Show a "spash screen"
+  DoDelay=1000;
+  drawTime(3969); delay(DoDelay); //while (1){};
+  drawTime(3868); DoDelay-=200; delay(DoDelay);
+  drawTime(3767); DoDelay-=175; delay(DoDelay);
+  drawTime(3666); DoDelay-=150; delay(DoDelay);
+  drawTime(3555); DoDelay-=125; delay(DoDelay);
+  drawTime(3444); DoDelay-=100; delay(DoDelay);
+  drawTime(3333); DoDelay-= 75; delay(DoDelay);
+  drawTime(2222); DoDelay-= 50; delay(DoDelay);
+  drawTime(1111); DoDelay-= 25; delay(DoDelay);
+  Serial.print(F("Final delay="));Serial.println(DoDelay);
+  displayOff();   delay(500);
 
-  if (digitalRead(BMenu) == LOW) {
-    mode = set24;
-  } else {
-    mode = time;
-    showTix();
-    delay(4000);
-  }
+  mode = time;
+  showTix();
+  delay(2000);
   displayOff();
   
   curr_hour = hour();
@@ -649,6 +654,15 @@ void menuPressStop(){
 
 void incClick(){
   Serial.println(F("in inc Click"));
+  if (mode==time){
+    settings.intensity++;
+    if (settings.intensity>INTLEVELS)
+      settings.intensity=1;
+    Serial.print(F("intensity level changed to "));
+    Serial.print(settings.intensity);
+    Serial.print(F(" or "));
+    Serial.println(levels[settings.intensity]);
+  }
 }
 
 
@@ -689,35 +703,26 @@ void loop() {
           printTime();
           Serial.println();
         */
-        /*
-        intens++;
-        if (intens>INTLEVELS)
-          intens=1;
-        */
-        settings.intensity=levels[intens];
         lastUpdate = millis();
         drawTime(curr_hour * 100 + curr_minute);
         Serial.print(F("Intensity: "));
-        Serial.print(intens);
-        Serial.print(F("/"));
         Serial.print(settings.intensity);
+        Serial.print(F(" or "));
+        Serial.print(levels[settings.intensity]);
         Serial.print(F(", time is: "));
         printTime();
         Serial.println();
+        if (memcmp(&settings, &stored_settings, sizeof(settings)) != 0){
+          Serial.println(F("stored settings differes from current, saving them to eeprom"));
+          saveSettings();
+          memcpy(&stored_settings,&settings,sizeof(settings));
+        }
       } // if timye to update
     } // if new second
   } else if (mode = setH) {
   } else if (mode = set10M) {
   } else if (mode = set1M) {
   } else if (mode = setInt) {
-    /*
-      if (BInt released){
-      intens++;
-      if (intens>INTLEVELS)
-        intens=0;
-      settings.intensity=levels[intens];
-      }
-    */
   } else if (mode = set24) {
   }
 }
