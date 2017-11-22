@@ -311,15 +311,8 @@ void updateDisplay() {
 /****************************************************************/
 void updateDisplayValues() {
   Timer1.stop();
-  // should use memcpy
-  for (uint8_t r = 0; r < ROWS; r++) {
-    for (uint8_t c = 0; c < COLUMNS; c++) {
-      LEDBuffer[r][c] = LEDAssembly[r][c];
-    }
-  }
+  memcpy((const void *)LEDBuffer,(const void *)LEDAssembly,sizeof(LEDBuffer));
   Timer1.resume();
-  //  interrupts();
-
 } // updateDisplayValues
 
 /****************************************************************/
@@ -717,7 +710,7 @@ void loop() {
           saveSettings();
           memcpy(&stored_settings,&settings,sizeof(settings));
         }
-      } // if timye to update
+      } // if time to update
     } // if new second
   } else if (mode = setH) {
   } else if (mode = set10M) {
