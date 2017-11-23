@@ -98,8 +98,14 @@
 */
 
 #define INTLEVELS 5
-const uint8_t levels[] = {0, 1, 2, 4, 6, 10};
-#define CYCLES 10
+//const uint8_t levels[] = {0, 1, 2, 4, 6,10};
+//#define CYCLES 10
+//const uint8_t levels[] = {0, 3, 6,11,20};
+//#define CYCLES 20
+const uint8_t levels[] = {0, 2, 3, 6, 9,15};
+#define CYCLES 15
+//const uint8_t levels[] = {0, 2, 5, 8,12,20};
+//#define CYCLES 20
 
 //Display status
 volatile boolean LEDBuffer[ROWS][COLUMNS];
@@ -169,17 +175,29 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
   INC -> change brightness in 5 levels
 
   MOD for clock setting - same
-  press 1: hour (setH)
-  press 2: 10 mins (set10M)
-  press 3: 1 mins (set1M)
+  press 1: flash left two, then show/set hour (setH)
+  press 2: flash 10min then show/set 10 mins (set10M)
+  press 3: -"- 1 mins (set1M)
   press 4: flash all LEDs, then start clock at sec=0
 
-  MOD 2 sec for interval
-  left bar shows all 3 leds on (setInt)
-  INC now cycles through the interval on the right, showing seconds for updates, 1/5/30/60 seconds
 
   ================
   maybe change the above two ones
+
+  Similar to original tix clock
+  INC -> change brightness in 5 levels
+
+  MOD for clock setting - same
+  press 1: flash left two, then show/set hour (setH)
+  press 2: flash 10min then show/set 10 mins (set10M)
+  press 3: -"- 1 mins (set1M)
+  press 4: flash all LEDs, then start clock at sec=0
+
+  MOD2, hold "inc" (not mode as the original is) for 2 sec to set interval
+    left bar shows all 3 leds on (setInt)
+  INC now cycles through the interval on the right, showing seconds for updates, 1/5/30/60 seconds
+
+  New stuff;
   long press "mode"
     when all squares light up advanced mode is in effect
   release mode
@@ -219,7 +237,6 @@ const uint8_t colPins[COLUMNS] = {5, 6, 7, 8, A0, A1, A2, 12, 13};
 // connect the buttons
 OneButton buttonMenu(BMenu,true);
 OneButton buttonInc(BInc,true);
-
 
 //RTC
 #define DS3231_ADDR 0x68
@@ -623,6 +640,7 @@ void setup() {
 
 void menuClick(){
   Serial.println(F("in menu Click"));
+  
 }
 
 void menuDoubleClick(){
@@ -648,9 +666,10 @@ void menuPressStop(){
 void incClick(){
   Serial.println(F("in inc Click"));
   if (mode==time){
-    settings.intensity++;
-    if (settings.intensity>INTLEVELS)
-      settings.intensity=1;
+    if (settings.intensity==1)
+      settings.intensity=INTLEVELS;
+    else
+      settings.intensity--;
     Serial.print(F("intensity level changed to "));
     Serial.print(settings.intensity);
     Serial.print(F(" or "));
@@ -702,6 +721,8 @@ void loop() {
         Serial.print(settings.intensity);
         Serial.print(F(" or "));
         Serial.print(levels[settings.intensity]);
+        Serial.print(F(" cycles out of "));
+        Serial.print(CYCLES);
         Serial.print(F(", time is: "));
         printTime();
         Serial.println();
