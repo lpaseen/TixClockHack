@@ -120,7 +120,7 @@ static uint8_t myYear, myMonth, myDay;
 typedef struct {
   boolean mode24; // clock mode 24h or 12h
   uint8_t intensity; // 5 levels of intensity, 0=off
-  uint8_t updateInterval; // 1/5/30/60 seconds
+  uint8_t updateInterval; //  1,4,10,60 seconds
   unsigned int checksum;
 } Settings_t;
 
@@ -182,43 +182,54 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
 
 
   ================
-  maybe change the above two ones
-
-  Similar to original tix clock
+  Beginning is similar to original tix clock
   INC -> change brightness in 5 levels
 
   MOD for clock setting - same
-  press 1: flash left two, then show/set hour (setH)
-  press 2: flash 10min then show/set 10 mins (set10M)
-  press 3: -"- 1 mins (set1M)
-  press 4: flash all LEDs, then start clock at sec=0
+  * press 1: flash left two, then show/set hour (setH)
+  * press 2: flash 10min then show/set 10 mins (set10M)
+  * press 3: -"- 1 mins (set1M)
+  * press 4: flash all LEDs, then start clock at sec=0
+  no action in 2 minutes reset back to time
 
   MOD2, hold "inc" (not mode as the original is) for 2 sec to set interval
-    left bar shows all 3 leds on (setInt)
-  INC now cycles through the interval on the right, showing seconds for updates, 1/5/30/60 seconds
+  *  left bar shows all 3 leds on (setInt)
+  INC now cycles through the interval on the right, showing seconds for updates, 1,4,10,60 seconds (shows 59)
+  no action in 10 seconds reset back to time
 
   New stuff;
   long press "mode"
-    when all squares light up advanced mode is in effect
+  *  when all squares light up advanced mode is in effect
   release mode
-   leftmost top LED stays on, right two (minutes) shows 12 or 24 for 12/24h mode
-   inc to toggle
+  * leftmost top LED stays on, right two (minutes) shows 12 or 24 for 12/24h mode
+  * inc to toggle
   click mode for daylight saving time
-    leftmost middle LED comes on, two middle fields shows DL, right is all on or all off
-    "inc" to toggle daylight saving
+  *  leftmost middle LED comes on, two middle fields shows DL, right is all on or all off
+  *  "inc" to toggle daylight saving
   click mode for timezone hours
-    leftmost bottom LED comes on, right lights show "TIZ" for 1sec, then hours like -4 or +5
-    inc to change
+  *  leftmost bottom LED comes on, right lights show "TIZ" for 1sec, then hours like -4 or +5
+  *  inc to change
   click mode for timezone minutes
-    leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
-    inc to change
+  *  leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
+  *  inc to change
+  click mode for date setting - start with year, left shows a "Y"
+   O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2017
+   O  OXO
+   O  OXO
+    click mode month, left shows a "M" (which looks like H)
+   O  XOX (month10) (month1)
+   O  XXX
+   O  XOX
+    click mode day
+   O  XXO (day10) (day1), left shows a "D"
+   O  XOX
+   O  XXO
   click mode again to exit
-
+  no action in 10 seconds reset back to time
 
   X XXX XX XXX
   X XXX XX XXX
   X XXX XX XXX
-
 
 */
 
@@ -567,7 +578,7 @@ void setup() {
   if (!readSettings()) {
     settings.mode24 = true; // clock mode 24h or 12h
     settings.intensity = INTLEVELS; // 5 levels of intensity, 0=off
-    settings.updateInterval = 5; // 1/5/30/60 seconds
+    settings.updateInterval = 5; //  1,4,10,60 seconds
     saveSettings();
   }
   memcpy(&stored_settings,&settings,sizeof(settings));
