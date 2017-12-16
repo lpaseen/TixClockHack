@@ -231,6 +231,28 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
   X XXX XX XXX
   X XXX XX XXX
 
+
+================================================================
+Serial console commands
+
+#every command is changed to UPPERCASE
+#time format is somewhat flexible in regards to separators but not order
+#any part left out = 0
+!time: 13:14:15 # will only set time
+!date: 2017-11-12 #  will only set date
+#set date and time
+!time: 2017-11-12 13:14:15
+!date: 2017/11.12 3:1  $ 2017-11-12 03:01:00
+#
+#timezone is set by defining ST/DT
+!DT:EDT:2:Sun:mar:2:-240  # DT = UTC-4h
+!ST:EST:1:Sun:nov:2:-300 # ST = UTC-5h
+!mode:12h
+!mode:24h
+!intensity:2  # 5 levels of intensity, 1/2/3/4/5, 0 is off and not allowed here
+!Interval:1
+!IntervalRange:1,4,10,60 # it must be 4 but the numbers are configurable
+
 */
 
 enum mode {time, setH, set10M, set1M, setInt, set24, TZ} mode;
@@ -383,7 +405,7 @@ void showTix() {
 } // showTix
 
 /****************************************************************/
-void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs) {
+void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=false) {
   uint8_t ledcnt, maxLed, row, col;
   boolean newVal;
 
@@ -401,19 +423,27 @@ void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs) {
 
   maxLed = (maxCol - minCol) * 3;
 
+  // If all are to lit up, turn on all
+  // otherwise turn all off to start
+  //  with a blank canvas
   if (LEDs == maxLed)
     newVal = true;
   else
     newVal = false;
 
+  //update all LEDs
   for (row = 0; row < 3; row++) {
     for (col = minCol; col < maxCol; col++) {
       LEDAssembly[row][col] = newVal;
     }
   }
+
+  //If we where to turn on all we are now done
   if (LEDs == maxLed)
     return;
 
+  //randomize what leds to turn on
+  if (Rnd){
   ledcnt = 0;
   while (ledcnt < LEDs) {
     row = random(0, 3);
@@ -428,10 +458,12 @@ void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs) {
       Serial.println();
       delay(100);//PSDEBUG
     */
+    // If not already on, turn it on and inc led count
     if (!LEDAssembly[row][col]) {
       LEDAssembly[row][col] = true;
       ledcnt++;
     }
+  }
   }
 } // setFrame
 
