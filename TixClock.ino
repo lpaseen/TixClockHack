@@ -97,13 +97,19 @@
 
 */
 
+// NOTE: need to watch out for CYCLES%INTLEVELS=0, then it will look very bad on lowest level
+
 #define INTLEVELS 5
-//const uint8_t levels[] = {0, 1, 2, 4, 6,10};
-//#define CYCLES 10
+const uint8_t levels[] = {0, 1, 2, 4, 6,10};
+#define CYCLES 10
 //const uint8_t levels[] = {0, 3, 6,11,20};
 //#define CYCLES 20
-const uint8_t levels[] = {0, 2, 3, 6, 9,15};
-#define CYCLES 15
+//const uint8_t levels[] = {0, 2, 3, 6, 9,14};
+//#define CYCLES 14
+//const uint8_t levels[] = {0, 2, 3, 6, 9,15};
+//#define CYCLES 15
+//const uint8_t levels[] = {0, 2, 3, 6, 9,16};
+//#define CYCLES 16
 //const uint8_t levels[] = {0, 2, 5, 8,12,20};
 //#define CYCLES 20
 
@@ -283,6 +289,8 @@ void printTime() {
   uint8_t curryear, currmonth, currday;
   time_t t = now();
 
+  t=myTZ.toLocal(t, &tcr); // compensate for timezone
+  
   curryear = year(t);
   currmonth = month(t);
   currday = day(t);
@@ -330,11 +338,12 @@ void updateDisplay() {
   currentRow++;
   if (currentRow == ROWS) {
     currentRow = 0;
+
+    cycle++;
+    if (cycle == CYCLES)
+      cycle = 0;
   }
 
-  cycle++;
-  if (cycle == CYCLES)
-    cycle = 0;
 
   /*
      Round/lev	1	2	3	4	5
@@ -348,6 +357,7 @@ void updateDisplay() {
   //check the LED for each column
 
   for (uint8_t c = 0; c < COLUMNS; c++) {
+    // 
     if (LEDBuffer[currentRow][c] && (levels[settings.intensity] - cycle) > 0) {
       digitalWrite(colPins[c], HIGH);
     } else {
