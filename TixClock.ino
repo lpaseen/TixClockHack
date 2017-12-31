@@ -405,7 +405,7 @@ void showTix() {
 } // showTix
 
 /****************************************************************/
-void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=false) {
+void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=true) {
   uint8_t ledcnt, maxLed, row, col;
   boolean newVal;
 
@@ -678,12 +678,14 @@ void setup() {
   buttonMenu.attachDuringLongPress(menuDuringPress);
   buttonMenu.attachLongPressStop(menuPressStop);
   buttonInc.attachClick(incClick);
+  buttonInc.attachLongPressStart(incPressStart);
+  buttonInc.attachDuringLongPress(incDuringPress);
+  buttonInc.attachLongPressStop(incPressStop);
   
 } // setup
 
 void menuClick(){
   Serial.println(F("in menu Click"));
-  
 }
 
 void menuDoubleClick(){
@@ -718,6 +720,22 @@ void incClick(){
     Serial.print(F(" or "));
     Serial.println(levels[settings.intensity]);
   }
+}
+
+void incPressStart(){
+  Serial.println(F("in inc PressStart"));
+}
+
+void incDuringPress(){
+  static long lastsecond;
+  if (int(millis()/1000) != lastsecond){
+    Serial.println(F("in inc DuringPress"));
+    lastsecond=int(millis()/1000);
+  }
+}
+
+void incPressStop(){
+  Serial.println(F("in inc PressStop"));
 }
 
 
