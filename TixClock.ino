@@ -262,7 +262,7 @@ Serial console commands
 
 */
 
-enum mode {time, setH, set10M, set1M, mode2, set24, setDL, setTZh, setTZm, setY, setM, setD,setInt} mode;
+enum mode {time, setH, set10M, set1M, mode2, set24, setDL, setTZh, setTZm, setY, setM, setD,mode3,setInt} mode;
 static unsigned long back2time; //milliseconds when it will go back to show time
 
 //Arduino pins
@@ -551,8 +551,25 @@ void drawTime(uint16_t number,boolean Rnd=true) {
   drawFrame(2, m10, Rnd);
   drawFrame(3, m1, Rnd);
 
-
 } // drawTime
+
+/****************************************************************/
+// show current time
+void drawNow(boolean Rnd=true){
+  time_t utc_time,local_time;
+  uint8_t curr_hour,curr_minute,curr_second;
+  
+  utc_time = now();
+  local_time = myTZ.toLocal(utc_time, &tcr);
+  curr_hour = hour(local_time);
+  if (!settings.mode24)
+    if (curr_hour>12)
+      curr_hour-=12;
+  curr_minute = minute(local_time);
+  curr_second = second(local_time);
+
+  drawTime(curr_hour * 100 + curr_minute,Rnd);
+}
 
 /****************************************************************/
 //calculate a checksum of a block
@@ -644,7 +661,7 @@ void setup() {
   if (!readSettings()) {
     settings.mode24 = true; // clock mode 24h or 12h
     settings.intensity = INTLEVELS; // 5 levels of intensity, 0=off
-    settings.updateInterval = 5; //  1,4,10,60 seconds
+    settings.updateInterval = 4; //  1,4,10,60 seconds
     settings.daylight = false; // daylight saving on/off
     saveSettings();
   }
@@ -699,8 +716,9 @@ void setup() {
 
   mode = time;
   //  showTix();
-  //`  delay(2000);
-  displayOff(true);
+  //  delay(2000);
+  drawNow();
+  //  displayOff(true);
   
   //  curr_hour = hour();
   //  curr_minute = minute();
@@ -729,7 +747,7 @@ void modeClick(){
     //flash left two, then show/set hour (setH)
     // Start 2 minute timer
     drawTime(3900);
-    delay(1000);
+    delay(500);
     back2time=millis()+120000; // reset in 2 minutes 
     mode=setH;
     Serial.println(F("Set hour"));
@@ -782,13 +800,19 @@ void modeClick(){
     //return to time
     mode=time;
     Serial.println(F("Date set, show time "));
+  }else if (mode==setInt){
+    //return to time
+    mode=time;
+    Serial.println(F("Interval set, show time "));
   }
-}
+} // modeClick
 
+/****************************************************************/
 void modeDoubleClick(){
   Serial.println(F("in mode DoubleClick"));
 }
 
+/****************************************************************/
 void modePressStart(){
   Serial.println(F("in mode PressStart"));
   /*
@@ -822,8 +846,9 @@ void modePressStart(){
   click mode again to exit
   no action in 10 seconds reset back to time
 */
-                        }
+}
 
+/****************************************************************/
 void modeDuringPress(){
   static long lastsecond;
   if (int(millis()/1000) != lastsecond){
@@ -832,6 +857,7 @@ void modeDuringPress(){
   }
 }
 
+/****************************************************************/
 void modePressStop(){
   Serial.println(F("in mode PressStop"));
   mode=set24;
@@ -839,6 +865,7 @@ void modePressStop(){
   Serial.println(F("set 12/24h"));
 }
 
+/****************************************************************/
 void incClick(){
   tmElements_t newTm;
   time_t newTime;
@@ -914,21 +941,47 @@ void incClick(){
         Serial.println(F(" daylight on"));
       }
     }else if (mode==setTZh){
+      //TODO
       // set timezone hours
+      Serial.println(F(" set TZ hours"));
     }else if (mode==setTZm){
+      //TODO
       // set timezone minutes
+      Serial.println(F(" set TZ minutes"));
     }else if (mode==setY){
+      //TODO
       //set clock year
+      Serial.println(F(" set clock year"));
     }else if (mode==setM){
+      //TODO
       //set clock month
+      Serial.println(F(" set clock month"));
     }else if (mode==setD){
+      //TODO
       //set clock day
+      Serial.println(F(" set clock day"));
+    }else if (mode==setInt){
+      // INC now cycles through the interval on the right, showing seconds for updates, 1,4,10,60 seconds (shows 59)
+      Serial.print(F(" update interval set to "));
+      if (settings.updateInterval==1){
+        settings.updateInterval=4;
+      }else if (settings.updateInterval==4){
+        settings.updateInterval=10;
+      }else if (settings.updateInterval==10){
+        settings.updateInterval=60;
+      }else {
+        settings.updateInterval=1;
+      }
+      Serial.println(settings.updateInterval);
     }
-  }
-}
+    // no action in 10 seconds reset back to time
+  } // swith (mode) {
+} // incClick
 
 void incPressStart(){
   Serial.println(F("in inc PressStart"));
+  mode=mode3;
+  drawTime(3000);
   // TODO
   // MOD2, hold "inc" (not mode as the original is) for 2 sec to set interval
   // *  left bar shows all 3 leds on (setInt)
@@ -946,44 +999,39 @@ void incDuringPress(){
 
 void incPressStop(){
   Serial.println(F("in inc PressStop"));
+  // MOD2, hold "inc" (not mode as the original is) for 2 sec to set interval
+  // *  left bar shows all 3 leds on (setInt)
+  back2time=millis()+10000; // reset in 10 seconds
+  mode=setInt;
 }
 
 
 void loop() {
-  static uint8_t last_hour = -1, last_minute = -1, last_second = -1;
-  static uint8_t curr_hour = -1, curr_minute = -1, curr_second = -1;
   static unsigned long lastUpdate = 0;
-  time_t utc_time,local_time;
+  unsigned long lastSecond=0,currSecond=0;
 
   // keep watching the push button:
   buttonMode.tick();
   buttonInc.tick();
   
-  utc_time = now();
-  local_time = myTZ.toLocal(utc_time, &tcr);
-  curr_hour = hour(local_time);
-  if (!settings.mode24)
-    if (curr_hour>12)
-      curr_hour-=12;
-  curr_minute = minute(local_time);
-  curr_second = second(local_time);
-
   if (mode != time){
     if (back2time<millis()){
       mode=time;
       Serial.println(F("timeout - back to show time"));
       VERBOSE=true;
+      drawNow();
     }else{
       VERBOSE=false;
     }
   }
+
+  currSecond=millis()/1000;
+  
   if (mode == time) {
     //Time changed?
-    if (curr_second != last_second) {
+    if (currSecond != lastSecond) {
       if ((millis() - lastUpdate) > settings.updateInterval * 1000) {
-        last_hour = curr_hour;
-        last_minute = curr_minute;
-        last_second = curr_second;
+        lastSecond=currSecond;
         /*
           Serial.print("DEBUG1:");
           Serial.print(curr_hour);
@@ -995,7 +1043,7 @@ void loop() {
           Serial.println();
         */
         lastUpdate = millis();
-        drawTime(curr_hour * 100 + curr_minute);
+        drawNow();
         Serial.print(F("Intensity: "));
         Serial.print(settings.intensity);
         Serial.print(F(" or "));
@@ -1013,23 +1061,28 @@ void loop() {
       } // if time to update
     } // if new second
   } else if (mode == setH) {
-    //slowly blink hours
-    drawTime(curr_hour * 100,false);
+    //show only hour
+    //    drawTime(curr_hour * 100,false);
+    drawNow(false);
   } else if (mode == set10M) {
-    //slowly blink 10m
-    drawTime(curr_minute,false);
+    //    drawTime(curr_minute,false);
+    drawNow(false);
   } else if (mode == set1M) {
     //slowly blink 1m
-    drawTime(curr_minute,false);
+    //    drawTime(curr_minute,false);
+    drawNow(false);
   } else if (mode == mode2) {
-    //all on
-    drawTime(3969);
+    //long press "mode", going to MOD2, all on
+    drawTime(3969,false);
+  } else if (mode == mode3) {
+    //long press "inc", going to INTerval, left 3 on
+    drawTime(3000,false);
   } else if (mode == set24) {
     //leftmost top,  12/24
     if (settings.mode24){
-      drawTime(1024);
+      drawTime(1024,false);
     }else{
-      drawTime(1012);
+      drawTime(1012,false);
     }
   } else if (mode == setDL) {
     //leftmost middle LED on, two middle fields shows DL, right is all on or all off
@@ -1062,6 +1115,7 @@ void loop() {
     }
     updateDisplayValues();
   } else if (mode == setTZh) {
+    //TODO
     //leftmost bottom LED comes on, right lights show "TIZ" for 1sec, then hours like -4 or +5
     displayOff(false);
     LEDAssembly[0][0] = false;
@@ -1069,25 +1123,30 @@ void loop() {
     LEDAssembly[2][0] = true;
     updateDisplayValues();
   } else if (mode == setTZm) {
+    //TODO
     //leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
     LEDAssembly[1][0] = true;
   } else if (mode == setY) {
+    //TODO
     //left shows a "Y" (setY)
     // O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2017
     // O  OXO
     // O  OXO
   } else if (mode == setM) {
+    //TODO
     //left shows a "M" (which looks like H)  (setM)
     // O  XOX (month10) (month1)
     // O  XXX
     // O  XOX
   } else if (mode == setD) {
+    //TODO
     //left shows a "D"  (setD)
     // O  XXO (day10) (day1)
     // O  XOX
     // O  XXO
   } else if (mode == setInt) {
     //left bar shows all 3 leds on
-    //show the interval on the right, showing seconds for updates, 1/4/10/60 (60 shows as 59)
+    //show the interval on the right, showing seconds for updates, 1/4/10/60
+    drawTime(3000+settings.updateInterval,false);
   }
 }
