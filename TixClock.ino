@@ -120,6 +120,8 @@ volatile static uint8_t cycle = 0;
 static uint8_t myHour, myMinute, mySecond;
 static uint8_t myYear, myMonth, myDay;
 
+static boolean VERBOSE=true;
+
 #include <EEPROM.h>
 typedef struct {
   boolean mode24; // clock mode 24h or 12h
@@ -278,8 +280,11 @@ OneButton buttonMode(BMode,true);
 OneButton buttonInc(BInc,true);
 
 //RTC
+// http://playground.arduino.cc/code/time
+// https://www.pjrc.com/teensy/td_libs_DS1307RTC.html
 #define DS3231_ADDR 0x68
 boolean RTC_present = false;
+tmElements_t tm;
 #include <Wire.h>
 #include <DS1307RTC.h>  // a basic DS1307/DS3231
 
@@ -493,7 +498,7 @@ void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=true) {
 } // setFrame
 
 /****************************************************************/
-void drawFrame(uint8_t frame, uint8_t digit) {
+void drawFrame(uint8_t frame, uint8_t digit,boolean Rnd=true) {
   uint8_t ledcnt, row, col;
 
   if (digit > 9)
@@ -501,21 +506,21 @@ void drawFrame(uint8_t frame, uint8_t digit) {
   if (frame == 0) { // 10 hour
     if (digit > 3)
       return;
-    setFrame(0, 0, digit);
+    setFrame(0, 0, digit, Rnd);
   } else if (frame == 1) { // 1 hour
-    setFrame(1, 3, digit);
+    setFrame(1, 3, digit, Rnd);
   } else if (frame == 2) { // 10 minute
     if (digit > 6)
       return;
-    setFrame(4, 5, digit);
+    setFrame(4, 5, digit, Rnd);
   } else if (frame == 3) { // 1 minute
-    setFrame(6, 8, digit);
+    setFrame(6, 8, digit, Rnd);
   }
 
   updateDisplayValues();
 } // drawFrame
 /****************************************************************/
-void drawTime(uint16_t number) {
+void drawTime(uint16_t number,boolean Rnd=true) {
   uint8_t h10, h1, m10, m1;
 
   h10 = int(number / 1000);
@@ -523,8 +528,10 @@ void drawTime(uint16_t number) {
   m10 = int((number % 100) / 10);
   m1 = int(number % 10);
 
-  Serial.print("Drawing ");
-  Serial.print(number, DEC);
+  if (VERBOSE){
+    Serial.print("Drawing ");
+    Serial.print(number, DEC);
+  }
   /*
   Serial.print("=");
   Serial.print(h10, DEC);
@@ -535,12 +542,14 @@ void drawTime(uint16_t number) {
   Serial.print(":");
   Serial.print(m1, DEC);
   */
-  Serial.println();
+  if (VERBOSE){
+    Serial.println();
+  }
 
-  drawFrame(0, h10);
-  drawFrame(1, h1);
-  drawFrame(2, m10);
-  drawFrame(3, m1);
+  drawFrame(0, h10, Rnd);
+  drawFrame(1, h1, Rnd);
+  drawFrame(2, m10, Rnd);
+  drawFrame(3, m1, Rnd);
 
 
 } // drawTime
@@ -675,7 +684,8 @@ void setup() {
 
   //Show a "spash screen"
   DoDelay=1000;
-  drawTime(3969); delay(DoDelay); //while (1){};
+  drawTime(3969); delay(DoDelay);
+  while (digitalRead(BMode) == LOW || digitalRead(BInc)== LOW){};
   drawTime(3868); DoDelay-=200; delay(DoDelay);
   drawTime(3767); DoDelay-=175; delay(DoDelay);
   drawTime(3666); DoDelay-=150; delay(DoDelay);
@@ -688,14 +698,14 @@ void setup() {
   displayOff(true);   delay(500);
 
   mode = time;
-  showTix();
-  delay(2000);
+  //  showTix();
+  //`  delay(2000);
   displayOff(true);
   
-  curr_hour = hour();
-  curr_minute = minute();
+  //  curr_hour = hour();
+  //  curr_minute = minute();
 
-  drawTime(curr_hour * 100 + curr_minute);
+  //  drawTime(curr_hour * 100 + curr_minute);
 
 // link the doubleclick function to be called on a doubleclick event.   
   buttonMode.attachClick(modeClick);
@@ -706,8 +716,7 @@ void setup() {
   buttonInc.attachClick(incClick);
   buttonInc.attachLongPressStart(incPressStart);
   buttonInc.attachDuringLongPress(incDuringPress);
-  buttonInc.attachLongPressStop(incPressStop);
-  
+  buttonInc.attachLongPressStop(incPressStop);  
 } // setup
 
 /****************************************************************/
@@ -719,21 +728,30 @@ void modeClick(){
   if (mode==time){
     //flash left two, then show/set hour (setH)
     // Start 2 minute timer
+    drawTime(3900);
+    delay(1000);
     back2time=millis()+120000; // reset in 2 minutes 
     mode=setH;
     Serial.println(F("Set hour"));
   }else if (mode==setH){
     //flash 10min then show/set 10 mins (set10M)
+    drawTime(30);
+    delay(500);
     back2time=millis()+120000; // reset in 2 minutes 
     mode=set10M;
     Serial.println(F("Set 10 Minute"));
   }else if (mode==set10M){
     //flash 1min then show/set 1 mins (set1M)
     back2time=millis()+120000; // reset in 2 minutes 
+    drawTime(9);
+    delay(500);
     mode=set1M;
     Serial.println(F("Set 1 minute"));
   }else if (mode==set1M){
     //flash all LEDs, then start clock at sec=0
+    drawTime(3969);
+    delay(500);
+    //TODO - set seconds=0
     mode=time;
     Serial.println(F("back to show time"));
   }else if (mode==set24){
@@ -822,6 +840,9 @@ void modePressStop(){
 }
 
 void incClick(){
+  tmElements_t newTm;
+  time_t newTime;
+
   Serial.print(F("in inc Click - "));
   if (mode==time){
     if (settings.intensity==1)
@@ -836,16 +857,44 @@ void incClick(){
     back2time=millis()+10000; // reset in 10 seconds
     if (mode==setH){
       back2time=millis()+120000; // reset in 2 minutes
-      //TODO - inc hours
-      Serial.println(F("inc hours"));
+      Serial.print(F("inc hours, "));
+      Serial.print(hour());
+      //      Serial.print(F(" "));Serial.print(now());Serial.print(F(" "));Serial.print(now()-(23UL*3600UL));Serial.print(F(" "));;Serial.print((23UL*3600UL),DEC);Serial.print(F(" "));
+      Serial.print(F(" => "));
+      if (hour() == 23){
+        newTime=now()-(23UL*3600UL);
+      }else{
+        newTime=now()+3600UL;
+      }
+      setTime(newTime);
+      RTC.set(now());
+      //      Serial.print(newTime);Serial.print(F(" "));Serial.print(now());Serial.print(F(" "));
+      Serial.println(hour());
     }else if (mode==set10M){
       back2time=millis()+120000; // reset in 2 minutes 
-      //TODO - inc minutes
-      Serial.println(F("inc minutes"));
+      Serial.print(F("inc 10 minutes"));
+      Serial.print(minute());
+      Serial.print(F(" => "));
+      if ((minute()/10)%10 == 9){
+        newTime=now()-(9*600);
+      }else{
+        newTime=now()+600;
+      }
+      setTime(newTime);
+      RTC.set(now());
+      Serial.println(minute());
     }else if (mode==set1M){
-      //TODO - reset seconds and flash all
-      mode=time;
-      Serial.println(F("set seconds=0"));
+      Serial.print(F("inc 1 minute"));
+      Serial.print(minute());
+      Serial.print(F(" => "));
+      if (minute()%10 == 9){
+        newTime=now()-(9*60);
+      }else{
+        newTime=now()+60;
+      }
+      setTime(newTime);
+      RTC.set(now());
+      Serial.println(minute());
     }else if (mode==set24){
       //set 12/24h mode
       if (settings.mode24){
@@ -919,9 +968,14 @@ void loop() {
   curr_minute = minute(local_time);
   curr_second = second(local_time);
 
-  if (mode != time && back2time<millis()){
-    mode=time;
-    Serial.println(F("timeout - back to show time"));
+  if (mode != time){
+    if (back2time<millis()){
+      mode=time;
+      Serial.println(F("timeout - back to show time"));
+      VERBOSE=true;
+    }else{
+      VERBOSE=false;
+    }
   }
   if (mode == time) {
     //Time changed?
@@ -960,13 +1014,13 @@ void loop() {
     } // if new second
   } else if (mode == setH) {
     //slowly blink hours
-    drawTime(curr_hour * 100 + curr_minute);
+    drawTime(curr_hour * 100,false);
   } else if (mode == set10M) {
     //slowly blink 10m
-    drawTime(curr_hour * 100 + curr_minute);
+    drawTime(curr_minute,false);
   } else if (mode == set1M) {
     //slowly blink 1m
-    drawTime(curr_hour * 100 + curr_minute);
+    drawTime(curr_minute,false);
   } else if (mode == mode2) {
     //all on
     drawTime(3969);
