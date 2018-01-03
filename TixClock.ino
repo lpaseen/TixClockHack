@@ -98,12 +98,16 @@
 */
 
 #define INTLEVELS 5
-//const uint8_t levels[] = {0, 1, 2, 4, 6,10};
-//#define CYCLES 10
+const uint8_t levels[] = {0, 1, 2, 4, 6,10};
+#define CYCLES 10
 //const uint8_t levels[] = {0, 3, 6,11,20};
 //#define CYCLES 20
-const uint8_t levels[] = {0, 2, 3, 6, 9,15};
-#define CYCLES 15
+//const uint8_t levels[] = {0, 2, 3, 6, 9,14};
+//#define CYCLES 14
+//const uint8_t levels[] = {0, 2, 3, 6, 9,15};
+//#define CYCLES 15
+//const uint8_t levels[] = {0, 2, 3, 6, 9,16};
+//#define CYCLES 16
 //const uint8_t levels[] = {0, 2, 5, 8,12,20};
 //#define CYCLES 20
 
@@ -116,11 +120,14 @@ volatile static uint8_t cycle = 0;
 static uint8_t myHour, myMinute, mySecond;
 static uint8_t myYear, myMonth, myDay;
 
+static boolean VERBOSE=true;
+
 #include <EEPROM.h>
 typedef struct {
   boolean mode24; // clock mode 24h or 12h
   uint8_t intensity; // 5 levels of intensity, 0=off
   uint8_t updateInterval; //  1,4,10,60 seconds
+  boolean daylight; // whatever daylight saving is in effect or not
   unsigned int checksum;
 } Settings_t;
 
@@ -199,29 +206,29 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
 
   New stuff;
   long press "mode"
-  *  when all squares light up advanced mode is in effect
-  release mode
+  *  when all squares light up advanced mode is in effect (mode2)
+  release mode (set24)
   * leftmost top LED stays on, right two (minutes) shows 12 or 24 for 12/24h mode
   * inc to toggle
-  click mode for daylight saving time
+  click mode for daylight saving time (setDL)
   *  leftmost middle LED comes on, two middle fields shows DL, right is all on or all off
   *  "inc" to toggle daylight saving
-  click mode for timezone hours
+  click mode for timezone hours (setTZh)
   *  leftmost bottom LED comes on, right lights show "TIZ" for 1sec, then hours like -4 or +5
   *  inc to change
-  click mode for timezone minutes
+  click mode for timezone minutes (setTZm)
   *  leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
   *  inc to change
-  click mode for date setting - start with year, left shows a "Y"
+  click mode for date setting - start with year, left shows a "Y" (setY)
    O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2017
    O  OXO
    O  OXO
-    click mode month, left shows a "M" (which looks like H)
+    click mode month, left shows a "M" (which looks like H)  (setM)
    O  XOX (month10) (month1)
    O  XXX
    O  XOX
-    click mode day
-   O  XXO (day10) (day1), left shows a "D"
+    click mode day, left shows a "D"  (setD)
+   O  XXO (day10) (day1)
    O  XOX
    O  XXO
   click mode again to exit
@@ -231,12 +238,35 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
   X XXX XX XXX
   X XXX XX XXX
 
+
+================================================================
+Serial console commands
+
+#every command is changed to UPPERCASE
+#time format is somewhat flexible in regards to separators but not order
+#any part left out = 0
+!time: 13:14:15 # will only set time
+!date: 2017-11-12 #  will only set date
+#set date and time
+!time: 2017-11-12 13:14:15
+!date: 2017/11.12 3:1  $ 2017-11-12 03:01:00
+#
+#timezone is set by defining ST/DT
+!DT:EDT:2:Sun:mar:2:-240  # DT = UTC-4h
+!ST:EST:1:Sun:nov:2:-300 # ST = UTC-5h
+!mode:12h
+!mode:24h
+!intensity:2  # 5 levels of intensity, 1/2/3/4/5, 0 is off and not allowed here
+!Interval:1
+!IntervalRange:1,4,10,60 # it must be 4 but the numbers are configurable
+
 */
 
-enum mode {time, setH, set10M, set1M, setInt, set24, TZ} mode;
+enum mode {time, setH, set10M, set1M, mode2, set24, setDL, setTZh, setTZm, setY, setM, setD,mode3,setInt} mode;
+static unsigned long back2time; //milliseconds when it will go back to show time
 
 //Arduino pins
-#define BMenu 3
+#define BMode 3
 #define BInc  4
 #define AC    2
 
@@ -246,12 +276,15 @@ const uint8_t colPins[COLUMNS] = {5, 6, 7, 8, A0, A1, A2, 12, 13};
 #include "OneButton.h"
 
 // connect the buttons
-OneButton buttonMenu(BMenu,true);
+OneButton buttonMode(BMode,true);
 OneButton buttonInc(BInc,true);
 
 //RTC
+// http://playground.arduino.cc/code/time
+// https://www.pjrc.com/teensy/td_libs_DS1307RTC.html
 #define DS3231_ADDR 0x68
 boolean RTC_present = false;
+tmElements_t tm;
 #include <Wire.h>
 #include <DS1307RTC.h>  // a basic DS1307/DS3231
 
@@ -261,6 +294,8 @@ void printTime() {
   uint8_t curryear, currmonth, currday;
   time_t t = now();
 
+  t=myTZ.toLocal(t, &tcr); // compensate for timezone
+  
   curryear = year(t);
   currmonth = month(t);
   currday = day(t);
@@ -308,6 +343,10 @@ void updateDisplay() {
   currentRow++;
   if (currentRow == ROWS) {
     currentRow = 0;
+
+    cycle++;
+    if (cycle == CYCLES)
+      cycle = 0;
   }
 
   cycle++;
@@ -326,6 +365,7 @@ void updateDisplay() {
   //check the LED for each column
 
   for (uint8_t c = 0; c < COLUMNS; c++) {
+    // 
     if (LEDBuffer[currentRow][c] && (levels[settings.intensity] - cycle) > 0) {
       digitalWrite(colPins[c], HIGH);
     } else {
@@ -357,7 +397,7 @@ void displayOff(boolean now = true) {
 
 /****************************************************************/
 void showTix() {
-  displayOff();
+  displayOff(false);
   //    0 123 45 678
   // 0  0 111 01 101
   // 1  0  1  01 010
@@ -383,7 +423,9 @@ void showTix() {
 } // showTix
 
 /****************************************************************/
-void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=false) {
+// turn on some LEDs
+// "Rnd" means random spots, otherwise it fills up by rows
+void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=true) {
   uint8_t ledcnt, maxLed, row, col;
   boolean newVal;
 
@@ -422,31 +464,44 @@ void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=false) {
 
   //randomize what leds to turn on
   if (Rnd){
-  ledcnt = 0;
-  while (ledcnt < LEDs) {
-    row = random(0, 3);
-    col = random(minCol, maxCol);
-    /*
-      Serial.print(" DEBUG2:");
-      Serial.print(row);
-      Serial.print(":");
-      Serial.print(col);
-      Serial.print(":");
-      Serial.print(ledcnt);
-      Serial.println();
-      delay(100);//PSDEBUG
-    */
-    // If not already on, turn it on and inc led count
-    if (!LEDAssembly[row][col]) {
+    ledcnt = 0;
+    while (ledcnt < LEDs) {
+      row = random(0, 3);
+      col = random(minCol, maxCol);
+      /*
+        Serial.print(" DEBUG2:");
+        Serial.print(row);
+        Serial.print(":");
+        Serial.print(col);
+        Serial.print(":");
+        Serial.print(ledcnt);
+        Serial.println();
+        delay(100);//PSDEBUG
+      */
+      // If not already on, turn it on and inc led count
+      if (!LEDAssembly[row][col]) {
+        LEDAssembly[row][col] = true;
+        ledcnt++;
+      }
+    }
+  } else {
+    ledcnt = 0;
+    row=0;
+    col=minCol;
+    while (ledcnt < LEDs) {
       LEDAssembly[row][col] = true;
       ledcnt++;
+      col++;
+      if (col==maxCol){
+        col=minCol;
+        row++;
+      }
     }
-  }
   }
 } // setFrame
 
 /****************************************************************/
-void drawFrame(uint8_t frame, uint8_t digit) {
+void drawFrame(uint8_t frame, uint8_t digit,boolean Rnd=true) {
   uint8_t ledcnt, row, col;
 
   if (digit > 9)
@@ -454,21 +509,21 @@ void drawFrame(uint8_t frame, uint8_t digit) {
   if (frame == 0) { // 10 hour
     if (digit > 3)
       return;
-    setFrame(0, 0, digit);
+    setFrame(0, 0, digit, Rnd);
   } else if (frame == 1) { // 1 hour
-    setFrame(1, 3, digit);
+    setFrame(1, 3, digit, Rnd);
   } else if (frame == 2) { // 10 minute
     if (digit > 6)
       return;
-    setFrame(4, 5, digit);
+    setFrame(4, 5, digit, Rnd);
   } else if (frame == 3) { // 1 minute
-    setFrame(6, 8, digit);
+    setFrame(6, 8, digit, Rnd);
   }
 
   updateDisplayValues();
 } // drawFrame
 /****************************************************************/
-void drawTime(uint16_t number) {
+void drawTime(uint16_t number,boolean Rnd=true) {
   uint8_t h10, h1, m10, m1;
 
   h10 = int(number / 1000);
@@ -476,8 +531,10 @@ void drawTime(uint16_t number) {
   m10 = int((number % 100) / 10);
   m1 = int(number % 10);
 
-  Serial.print("Drawing ");
-  Serial.print(number, DEC);
+  if (VERBOSE){
+    Serial.print("Drawing ");
+    Serial.print(number, DEC);
+  }
   /*
   Serial.print("=");
   Serial.print(h10, DEC);
@@ -488,15 +545,34 @@ void drawTime(uint16_t number) {
   Serial.print(":");
   Serial.print(m1, DEC);
   */
-  Serial.println();
+  if (VERBOSE){
+    Serial.println();
+  }
 
-  drawFrame(0, h10);
-  drawFrame(1, h1);
-  drawFrame(2, m10);
-  drawFrame(3, m1);
-
+  drawFrame(0, h10, Rnd);
+  drawFrame(1, h1, Rnd);
+  drawFrame(2, m10, Rnd);
+  drawFrame(3, m1, Rnd);
 
 } // drawTime
+
+/****************************************************************/
+// show current time
+void drawNow(boolean Rnd=true){
+  time_t utc_time,local_time;
+  uint8_t curr_hour,curr_minute,curr_second;
+  
+  utc_time = now();
+  local_time = myTZ.toLocal(utc_time, &tcr);
+  curr_hour = hour(local_time);
+  if (!settings.mode24)
+    if (curr_hour>12)
+      curr_hour-=12;
+  curr_minute = minute(local_time);
+  curr_second = second(local_time);
+
+  drawTime(curr_hour * 100 + curr_minute,Rnd);
+}
 
 /****************************************************************/
 //calculate a checksum of a block
@@ -567,7 +643,7 @@ uint8_t readSettings() {
 void setup() {
   uint16_t curr_hour, curr_minute,DoDelay;
 
-  pinMode(BMenu, INPUT);
+  pinMode(BMode, INPUT);
   pinMode(BInc, INPUT);
   for (uint8_t i = 0; i < ROWS; i++) {
     pinMode(rowPins[i], OUTPUT); digitalWrite(rowPins[i], HIGH);
@@ -588,7 +664,8 @@ void setup() {
   if (!readSettings()) {
     settings.mode24 = true; // clock mode 24h or 12h
     settings.intensity = INTLEVELS; // 5 levels of intensity, 0=off
-    settings.updateInterval = 5; //  1,4,10,60 seconds
+    settings.updateInterval = 4; //  1,4,10,60 seconds
+    settings.daylight = false; // daylight saving on/off
     saveSettings();
   }
   memcpy(&stored_settings,&settings,sizeof(settings));
@@ -627,7 +704,8 @@ void setup() {
 
   //Show a "spash screen"
   DoDelay=1000;
-  drawTime(3969); delay(DoDelay); //while (1){};
+  drawTime(3969); delay(DoDelay);
+  while (digitalRead(BMode) == LOW || digitalRead(BInc)== LOW){};
   drawTime(3868); DoDelay-=200; delay(DoDelay);
   drawTime(3767); DoDelay-=175; delay(DoDelay);
   drawTime(3666); DoDelay-=150; delay(DoDelay);
@@ -637,55 +715,165 @@ void setup() {
   drawTime(2222); DoDelay-= 50; delay(DoDelay);
   drawTime(1111); DoDelay-= 25; delay(DoDelay);
   Serial.print(F("Final delay="));Serial.println(DoDelay);
-  displayOff();   delay(500);
+  displayOff(true);   delay(500);
 
   mode = time;
-  showTix();
-  delay(2000);
-  displayOff();
+  //  showTix();
+  //  delay(2000);
+  drawNow();
+  //  displayOff(true);
   
-  curr_hour = hour();
-  curr_minute = minute();
+  //  curr_hour = hour();
+  //  curr_minute = minute();
 
-  drawTime(curr_hour * 100 + curr_minute);
+  //  drawTime(curr_hour * 100 + curr_minute);
 
 // link the doubleclick function to be called on a doubleclick event.   
-  buttonMenu.attachClick(menuClick);
-  buttonMenu.attachDoubleClick(menuDoubleClick);
-  buttonMenu.attachLongPressStart(menuPressStart);
-  buttonMenu.attachDuringLongPress(menuDuringPress);
-  buttonMenu.attachLongPressStop(menuPressStop);
+  buttonMode.attachClick(modeClick);
+  buttonMode.attachDoubleClick(modeDoubleClick);
+  buttonMode.attachLongPressStart(modePressStart);
+  buttonMode.attachDuringLongPress(modeDuringPress);
+  buttonMode.attachLongPressStop(modePressStop);
   buttonInc.attachClick(incClick);
-  
+  buttonInc.attachLongPressStart(incPressStart);
+  buttonInc.attachDuringLongPress(incDuringPress);
+  buttonInc.attachLongPressStop(incPressStop);  
 } // setup
 
-void menuClick(){
-  Serial.println(F("in menu Click"));
-  
+/****************************************************************/
+// action when 
+void modeClick(){
+  Serial.print(F("in mode Click - "));
+  back2time=millis()+10000; // reset in 10 seconds
+  //enum mode {time, setH, set10M, set1M, mode2, set24, setDL, setTZh, setTZm, setY, setM, setD,setInt} mode;
+  if (mode==time){
+    //flash left two, then show/set hour (setH)
+    // Start 2 minute timer
+    drawTime(3900);
+    delay(500);
+    back2time=millis()+120000; // reset in 2 minutes 
+    mode=setH;
+    Serial.println(F("Set hour"));
+  }else if (mode==setH){
+    //flash 10min then show/set 10 mins (set10M)
+    drawTime(30);
+    delay(500);
+    back2time=millis()+120000; // reset in 2 minutes 
+    mode=set10M;
+    Serial.println(F("Set 10 Minute"));
+  }else if (mode==set10M){
+    //flash 1min then show/set 1 mins (set1M)
+    back2time=millis()+120000; // reset in 2 minutes 
+    drawTime(9);
+    delay(500);
+    mode=set1M;
+    Serial.println(F("Set 1 minute"));
+  }else if (mode==set1M){
+    //flash all LEDs, then start clock at sec=0
+    drawTime(3969);
+    delay(500);
+    //TODO - set seconds=0
+    mode=time;
+    Serial.println(F("back to show time"));
+  }else if (mode==set24){
+    //set daylight saving on/off
+    mode=setDL;
+    Serial.println(F("set DL"));
+  }else if (mode==setDL){
+    // set timezone hours
+    mode=setTZh;
+    Serial.println(F("set TZh"));
+  }else if (mode==setTZh){
+    // set timezone minutes
+    mode=setTZm;
+    Serial.println(F("set TZm"));
+  }else if (mode==setTZm){
+    //set clock year
+    mode=setY;
+    Serial.println(F("set Year"));
+  }else if (mode==setY){
+    //set clock month
+    mode=setM;
+    Serial.println(F("set Month"));
+  }else if (mode==setM){
+    //set clock day
+    mode=setD;
+    Serial.println(F("set Day"));
+  }else if (mode==setD){
+    //return to time
+    mode=time;
+    Serial.println(F("Date set, show time "));
+  }else if (mode==setInt){
+    //return to time
+    mode=time;
+    Serial.println(F("Interval set, show time "));
+  }
+} // modeClick
+
+/****************************************************************/
+void modeDoubleClick(){
+  Serial.println(F("in mode DoubleClick"));
 }
 
-void menuDoubleClick(){
-  Serial.println(F("in menu DoubleClick"));
+/****************************************************************/
+void modePressStart(){
+  Serial.println(F("in mode PressStart"));
+  /*
+  New stuff;
+  long press "mode"
+  *  when all squares light up advanced mode is in effect (mode2)
+  release mode (set24)
+  * leftmost top LED stays on, right two (minutes) shows 12 or 24 for 12/24h mode
+  * inc to toggle
+  click mode for daylight saving time (setDL)
+  *  leftmost middle LED comes on, two middle fields shows DL, right is all on or all off
+  *  "inc" to toggle daylight saving
+  click mode for timezone hours (setTZh)
+  *  leftmost bottom LED comes on, right lights show "TIZ" for 1sec, then hours like -4 or +5
+  *  inc to change
+  click mode for timezone minutes (setTZm)
+  *  leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
+  *  inc to change
+  click mode for date setting - start with year, left shows a "Y" (setY)
+   O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2017
+   O  OXO
+   O  OXO
+    click mode month, left shows a "M" (which looks like H)  (setM)
+   O  XOX (month10) (month1)
+   O  XXX
+   O  XOX
+    click mode day
+   O  XXO (day10) (day1), left shows a "D"  (setD)
+   O  XOX
+   O  XXO
+  click mode again to exit
+  no action in 10 seconds reset back to time
+*/
 }
 
-void menuPressStart(){
-  Serial.println(F("in menu PressStart"));
-}
-
-void menuDuringPress(){
+/****************************************************************/
+void modeDuringPress(){
   static long lastsecond;
   if (int(millis()/1000) != lastsecond){
-    Serial.println(F("in menu DuringPress"));
+    Serial.println(F("in mode DuringPress"));
     lastsecond=int(millis()/1000);
   }
 }
 
-void menuPressStop(){
-  Serial.println(F("in menu PressStop"));
+/****************************************************************/
+void modePressStop(){
+  Serial.println(F("in mode PressStop"));
+  mode=set24;
+  back2time=millis()+10000; // reset in 10 seconds
+  Serial.println(F("set 12/24h"));
 }
 
+/****************************************************************/
 void incClick(){
-  Serial.println(F("in inc Click"));
+  tmElements_t newTm;
+  time_t newTime;
+
+  Serial.print(F("in inc Click - "));
   if (mode==time){
     if (settings.intensity==1)
       settings.intensity=INTLEVELS;
@@ -695,7 +883,129 @@ void incClick(){
     Serial.print(settings.intensity);
     Serial.print(F(" or "));
     Serial.println(levels[settings.intensity]);
+  }else{
+    back2time=millis()+10000; // reset in 10 seconds
+    if (mode==setH){
+      back2time=millis()+120000; // reset in 2 minutes
+      Serial.print(F("inc hours, "));
+      Serial.print(hour());
+      //      Serial.print(F(" "));Serial.print(now());Serial.print(F(" "));Serial.print(now()-(23UL*3600UL));Serial.print(F(" "));;Serial.print((23UL*3600UL),DEC);Serial.print(F(" "));
+      Serial.print(F(" => "));
+      if (hour() == 23){
+        newTime=now()-(23UL*3600UL);
+      }else{
+        newTime=now()+3600UL;
+      }
+      setTime(newTime);
+      RTC.set(now());
+      //      Serial.print(newTime);Serial.print(F(" "));Serial.print(now());Serial.print(F(" "));
+      Serial.println(hour());
+    }else if (mode==set10M){
+      back2time=millis()+120000; // reset in 2 minutes 
+      Serial.print(F("inc 10 minutes"));
+      Serial.print(minute());
+      Serial.print(F(" => "));
+      if ((minute()/10)%10 == 9){
+        newTime=now()-(9*600);
+      }else{
+        newTime=now()+600;
+      }
+      setTime(newTime);
+      RTC.set(now());
+      Serial.println(minute());
+    }else if (mode==set1M){
+      Serial.print(F("inc 1 minute"));
+      Serial.print(minute());
+      Serial.print(F(" => "));
+      if (minute()%10 == 9){
+        newTime=now()-(9*60);
+      }else{
+        newTime=now()+60;
+      }
+      setTime(newTime);
+      RTC.set(now());
+      Serial.println(minute());
+    }else if (mode==set24){
+      //set 12/24h mode
+      if (settings.mode24){
+        settings.mode24=false;
+        Serial.println(F(" 12h mode"));
+      }else{
+        settings.mode24=true;
+        Serial.println(F(" 24h mode"));
+      }
+    }else if (mode==setDL){
+      //set daylight saving on/off
+      if (settings.daylight){
+        settings.daylight=false;
+        Serial.println(F(" daylight off"));
+      }else{
+        settings.daylight=true;
+        Serial.println(F(" daylight on"));
+      }
+    }else if (mode==setTZh){
+      //TODO
+      // set timezone hours
+      Serial.println(F(" set TZ hours"));
+    }else if (mode==setTZm){
+      //TODO
+      // set timezone minutes
+      Serial.println(F(" set TZ minutes"));
+    }else if (mode==setY){
+      //TODO
+      //set clock year
+      Serial.println(F(" set clock year"));
+    }else if (mode==setM){
+      //TODO
+      //set clock month
+      Serial.println(F(" set clock month"));
+    }else if (mode==setD){
+      //TODO
+      //set clock day
+      Serial.println(F(" set clock day"));
+    }else if (mode==setInt){
+      // INC now cycles through the interval on the right, showing seconds for updates, 1,4,10,60 seconds (shows 59)
+      Serial.print(F(" update interval set to "));
+      if (settings.updateInterval==1){
+        settings.updateInterval=4;
+      }else if (settings.updateInterval==4){
+        settings.updateInterval=10;
+      }else if (settings.updateInterval==10){
+        settings.updateInterval=60;
+      }else {
+        settings.updateInterval=1;
+      }
+      Serial.println(settings.updateInterval);
+    }
+    // no action in 10 seconds reset back to time
+  } // swith (mode) {
+} // incClick
+
+void incPressStart(){
+  Serial.println(F("in inc PressStart"));
+  mode=mode3;
+  drawTime(3000);
+  // TODO
+  // MOD2, hold "inc" (not mode as the original is) for 2 sec to set interval
+  // *  left bar shows all 3 leds on (setInt)
+  // INC now cycles through the interval on the right, showing seconds for updates, 1,4,10,60 seconds (shows 59)
+  // no action in 10 seconds reset back to time
+}
+
+void incDuringPress(){
+  static long lastsecond;
+  if (int(millis()/1000) != lastsecond){
+    Serial.println(F("in inc DuringPress"));
+    lastsecond=int(millis()/1000);
   }
+}
+
+void incPressStop(){
+  Serial.println(F("in inc PressStop"));
+  // MOD2, hold "inc" (not mode as the original is) for 2 sec to set interval
+  // *  left bar shows all 3 leds on (setInt)
+  back2time=millis()+10000; // reset in 10 seconds
+  mode=setInt;
 }
 
 
@@ -703,29 +1013,30 @@ void loop() {
   static uint8_t last_hour = -1, last_minute = -1, last_second = -1;
   static uint8_t curr_hour = -1, curr_minute = -1, curr_second = -1;
   static unsigned long lastUpdate = 0;
-  time_t utc_time,local_time;
+  unsigned long lastSecond=0,currSecond=0;
 
   // keep watching the push button:
-  buttonMenu.tick();
+  buttonMode.tick();
   buttonInc.tick();
   
-  utc_time = now();
+  if (mode != time){
+    if (back2time<millis()){
+      mode=time;
+      Serial.println(F("timeout - back to show time"));
+      VERBOSE=true;
+      drawNow();
+    }else{
+      VERBOSE=false;
+    }
+  }
 
-  local_time = myTZ.toLocal(utc_time, &tcr);
-  curr_hour = hour(local_time);
-  if (!settings.mode24)
-    if (curr_hour>12)
-      curr_hour-=12;
-  curr_minute = minute(local_time);
-  curr_second = second(local_time);
-
+  currSecond=millis()/1000;
+  
   if (mode == time) {
     //Time changed?
-    if (curr_second != last_second) {
+    if (currSecond != lastSecond) {
       if ((millis() - lastUpdate) > settings.updateInterval * 1000) {
-        last_hour = curr_hour;
-        last_minute = curr_minute;
-        last_second = curr_second;
+        lastSecond=currSecond;
         /*
           Serial.print("DEBUG1:");
           Serial.print(curr_hour);
@@ -737,7 +1048,7 @@ void loop() {
           Serial.println();
         */
         lastUpdate = millis();
-        drawTime(curr_hour * 100 + curr_minute);
+        drawNow();
         Serial.print(F("Intensity: "));
         Serial.print(settings.intensity);
         Serial.print(F(" or "));
@@ -754,10 +1065,93 @@ void loop() {
         }
       } // if time to update
     } // if new second
-  } else if (mode = setH) {
-  } else if (mode = set10M) {
-  } else if (mode = set1M) {
-  } else if (mode = setInt) {
-  } else if (mode = set24) {
+  } else if (mode == setH) {
+    //show only hour
+    //    drawTime(curr_hour * 100,false);
+    drawNow(false);
+  } else if (mode == set10M) {
+    //    drawTime(curr_minute,false);
+    drawNow(false);
+  } else if (mode == set1M) {
+    //slowly blink 1m
+    //    drawTime(curr_minute,false);
+    drawNow(false);
+  } else if (mode == mode2) {
+    //long press "mode", going to MOD2, all on
+    drawTime(3969,false);
+  } else if (mode == mode3) {
+    //long press "inc", going to INTerval, left 3 on
+    drawTime(3000,false);
+  } else if (mode == set24) {
+    //leftmost top,  12/24
+    if (settings.mode24){
+      drawTime(1024,false);
+    }else{
+      drawTime(1012,false);
+    }
+  } else if (mode == setDL) {
+    //leftmost middle LED on, two middle fields shows DL, right is all on or all off
+    displayOff(false);
+    LEDAssembly[0][0] = false;
+    LEDAssembly[1][0] = true;
+    LEDAssembly[2][0] = false;
+    // D
+    LEDAssembly[0][1] = true;
+    LEDAssembly[1][1] = true;
+    LEDAssembly[2][1] = true;
+    LEDAssembly[0][2] = true;
+    LEDAssembly[1][2] = false;
+    LEDAssembly[2][2] = true;
+    LEDAssembly[0][3] = false;
+    LEDAssembly[1][3] = true;
+    LEDAssembly[2][3] = false;
+    // L
+    LEDAssembly[0][4] = true;
+    LEDAssembly[1][4] = true;
+    LEDAssembly[2][4] = true;
+    LEDAssembly[0][5] = false;
+    LEDAssembly[1][5] = false;
+    LEDAssembly[2][5] = true;
+        
+    if (settings.daylight){
+      drawFrame(3,9);  
+    }else{
+      drawFrame(3,0);
+    }
+    updateDisplayValues();
+  } else if (mode == setTZh) {
+    //TODO
+    //leftmost bottom LED comes on, right lights show "TIZ" for 1sec, then hours like -4 or +5
+    displayOff(false);
+    LEDAssembly[0][0] = false;
+    LEDAssembly[1][0] = false;
+    LEDAssembly[2][0] = true;
+    updateDisplayValues();
+  } else if (mode == setTZm) {
+    //TODO
+    //leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
+    LEDAssembly[1][0] = true;
+  } else if (mode == setY) {
+    //TODO
+    //left shows a "Y" (setY)
+    // O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2017
+    // O  OXO
+    // O  OXO
+  } else if (mode == setM) {
+    //TODO
+    //left shows a "M" (which looks like H)  (setM)
+    // O  XOX (month10) (month1)
+    // O  XXX
+    // O  XOX
+  } else if (mode == setD) {
+    //TODO
+    //left shows a "D"  (setD)
+    // O  XXO (day10) (day1)
+    // O  XOX
+    // O  XXO
+  } else if (mode == setInt) {
+    //left bar shows all 3 leds on
+    //show the interval on the right, showing seconds for updates, 1/4/10/60
+    drawTime(3000+settings.updateInterval,false);
   }
 }
