@@ -383,7 +383,7 @@ void showTix() {
 } // showTix
 
 /****************************************************************/
-void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs) {
+void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=false) {
   uint8_t ledcnt, maxLed, row, col;
   boolean newVal;
 
@@ -401,19 +401,27 @@ void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs) {
 
   maxLed = (maxCol - minCol) * 3;
 
+  // If all are to lit up, turn on all
+  // otherwise turn all off to start
+  //  with a blank canvas
   if (LEDs == maxLed)
     newVal = true;
   else
     newVal = false;
 
+  //update all LEDs
   for (row = 0; row < 3; row++) {
     for (col = minCol; col < maxCol; col++) {
       LEDAssembly[row][col] = newVal;
     }
   }
+
+  //If we where to turn on all we are now done
   if (LEDs == maxLed)
     return;
 
+  //randomize what leds to turn on
+  if (Rnd){
   ledcnt = 0;
   while (ledcnt < LEDs) {
     row = random(0, 3);
@@ -428,10 +436,12 @@ void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs) {
       Serial.println();
       delay(100);//PSDEBUG
     */
+    // If not already on, turn it on and inc led count
     if (!LEDAssembly[row][col]) {
       LEDAssembly[row][col] = true;
       ledcnt++;
     }
+  }
   }
 } // setFrame
 
