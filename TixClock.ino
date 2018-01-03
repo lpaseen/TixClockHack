@@ -498,7 +498,7 @@ void setFrame(uint8_t minCol, uint8_t maxCol, uint8_t LEDs,boolean Rnd=true) {
 } // setFrame
 
 /****************************************************************/
-void drawFrame(uint8_t frame, uint8_t digit,boolean Rnd=true) {
+void drawFrame(uint8_t frame, uint8_t digit,boolean Rnd=true,boolean doNow=true) {
   uint8_t ledcnt, row, col;
 
   if (digit > 9)
@@ -517,7 +517,8 @@ void drawFrame(uint8_t frame, uint8_t digit,boolean Rnd=true) {
     setFrame(6, 8, digit, Rnd);
   }
 
-  updateDisplayValues();
+  if (doNow)
+    updateDisplayValues();
 } // drawFrame
 /****************************************************************/
 void drawTime(uint16_t number,boolean Rnd=true) {
@@ -949,17 +950,54 @@ void incClick(){
       // set timezone minutes
       Serial.println(F(" set TZ minutes"));
     }else if (mode==setY){
-      //TODO
       //set clock year
-      Serial.println(F(" set clock year"));
+      Serial.print(F(" set clock year, "));
+      Serial.print(year());
+      Serial.print(F(" => "));
+      newTime=now();
+      breakTime(newTime, newTm);
+      if (newTm.Year <2018 || newTm.Year >2032){
+	newTm.Year=2018;
+      }else{
+	newTm.Year++;
+      }
+      newTime=makeTime(newTm);
+      setTime(newTime);
+      RTC.set(now());
+      Serial.println(year());
     }else if (mode==setM){
-      //TODO
       //set clock month
-      Serial.println(F(" set clock month"));
+      Serial.print(F(" set clock month, "));
+      Serial.print(month());
+      Serial.print(F(" => "));
+      newTime=now();
+      breakTime(newTime, newTm);
+      if (newTm.Month <1 || newTm.Month >=12){
+	newTm.Month=1;
+      }else{
+	newTm.Month++;
+      }
+      newTime=makeTime(newTm);
+      setTime(newTime);
+      RTC.set(now());
+      Serial.println(month());
     }else if (mode==setD){
-      //TODO
       //set clock day
-      Serial.println(F(" set clock day"));
+      Serial.print(F(" set clock day, "));
+      Serial.print(day());
+      Serial.print(F(" => "));
+      newTime=now();
+      breakTime(newTime, newTm);
+      if (newTm.Day <1 || newTm.Day >=31){
+	newTm.Day=1;
+      }else{
+	newTm.Day++;
+      }
+      //TODO - handle 29/30 day months
+      newTime=makeTime(newTm);
+      setTime(newTime);
+      RTC.set(now());
+      Serial.println(month());
     }else if (mode==setInt){
       // INC now cycles through the interval on the right, showing seconds for updates, 1,4,10,60 seconds (shows 59)
       Serial.print(F(" update interval set to "));
@@ -1129,21 +1167,72 @@ void loop() {
   } else if (mode == setY) {
     //TODO
     //left shows a "Y" (setY)
-    // O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2017
+    // O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2018
     // O  OXO
     // O  OXO
+    displayOff(false);
+    LEDAssembly[0][0] = false;
+    LEDAssembly[1][0] = false;
+    LEDAssembly[2][0] = false;
+
+    LEDAssembly[0][1] = true;
+    LEDAssembly[1][1] = false;
+    LEDAssembly[2][1] = true;
+    LEDAssembly[0][2] = false;
+    LEDAssembly[1][2] = true;
+    LEDAssembly[2][2] = false;
+    LEDAssembly[0][3] = false;
+    LEDAssembly[1][3] = true;
+    LEDAssembly[2][3] = false;
+
+    drawFrame(2,(year()%100)/10,false,false);
+    drawFrame(3,year()%10,false);
   } else if (mode == setM) {
     //TODO
     //left shows a "M" (which looks like H)  (setM)
     // O  XOX (month10) (month1)
     // O  XXX
     // O  XOX
+    displayOff(false);
+    LEDAssembly[0][0] = false;
+    LEDAssembly[1][0] = false;
+    LEDAssembly[2][0] = false;
+
+    LEDAssembly[0][1] = true;
+    LEDAssembly[1][1] = false;
+    LEDAssembly[2][1] = true;
+    LEDAssembly[0][2] = true;
+    LEDAssembly[1][2] = true;
+    LEDAssembly[2][2] = true;
+    LEDAssembly[0][3] = true;
+    LEDAssembly[1][3] = false;
+    LEDAssembly[2][3] = true;
+
+    drawFrame(2,(month()%100)/10,false,false);
+    drawFrame(3,month()%10,false);
   } else if (mode == setD) {
     //TODO
     //left shows a "D"  (setD)
     // O  XXO (day10) (day1)
     // O  XOX
     // O  XXO
+    displayOff(false);
+    LEDAssembly[0][0] = false;
+    LEDAssembly[1][0] = false;
+    LEDAssembly[2][0] = false;
+
+    LEDAssembly[0][1] = true;
+    LEDAssembly[1][1] = true;
+    LEDAssembly[2][1] = false;
+    LEDAssembly[0][2] = true;
+    LEDAssembly[1][2] = false;
+    LEDAssembly[2][2] = true;
+    LEDAssembly[0][3] = true;
+    LEDAssembly[1][3] = true;
+    LEDAssembly[2][3] = false;
+
+    drawFrame(2,(day()%100)/10,false,false);
+    drawFrame(3,day()%10,false);
   } else if (mode == setInt) {
     //left bar shows all 3 leds on
     //show the interval on the right, showing seconds for updates, 1/4/10/60
