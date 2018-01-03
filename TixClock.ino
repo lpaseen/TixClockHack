@@ -349,9 +349,6 @@ void updateDisplay() {
       cycle = 0;
   }
 
-  cycle++;
-  if (cycle == CYCLES)
-    cycle = 0;
 
   /*
      Round/lev	1	2	3	4	5
@@ -1010,8 +1007,6 @@ void incPressStop(){
 
 
 void loop() {
-  static uint8_t last_hour = -1, last_minute = -1, last_second = -1;
-  static uint8_t curr_hour = -1, curr_minute = -1, curr_second = -1;
   static unsigned long lastUpdate = 0;
   unsigned long lastSecond=0,currSecond=0;
 
