@@ -120,6 +120,10 @@ volatile static uint8_t cycle = 0;
 static uint8_t myHour, myMinute, mySecond;
 static uint8_t myYear, myMonth, myDay;
 
+#define LEAP_YEAR(Y)     ( (Y>0) && !(Y%4) && ( (Y%100) || !(Y%400) ) )
+static  const uint8_t monthDays[]={31,28,31,30,31,30,31,31,30,31,30,31}; // API starts months from 1, this array starts from 0
+
+
 static boolean VERBOSE=true;
 
 #include <EEPROM.h>
@@ -128,6 +132,19 @@ typedef struct {
   uint8_t intensity; // 5 levels of intensity, 0=off
   uint8_t updateInterval; //  1,4,10,60 seconds
   boolean daylight; // whatever daylight saving is in effect or not
+  char    DSTabbrev[6];
+  uint8_t DSTweek;      //First, Second, Third, Fourth, or Last week of the month
+  uint8_t DSTdow;       //day of week, 1=Sun, 2=Mon, ... 7=Sat
+  uint8_t DSTmonth;     //1=Jan, 2=Feb, ... 12=Dec
+  uint8_t DSThour;      //0-23
+  int16_t DSToffset;        //offset from UTC in minutes
+  char    STDabbrev[6];
+  uint8_t STDweek;      //First, Second, Third, Fourth, or Last week of the month
+  uint8_t STDdow;       //day of week, 1=Sun, 2=Mon, ... 7=Sat
+  uint8_t STDmonth;     //1=Jan, 2=Feb, ... 12=Dec
+  uint8_t STDhour;      //0-23
+  int16_t STDoffset;        //offset from UTC in minutes
+
   unsigned int checksum;
 } Settings_t;
 
@@ -135,15 +152,16 @@ volatile Settings_t settings;
 volatile Settings_t stored_settings;
 
 #include <TimeLib.h>
-#include <Timezone.h> //https://github.com/JChristensen/Timezone
-
-//Timechange rules are to tricky to add to the menu
-//leaving them hardcoded here in the software
+#include <Timezone.h> // https://github.com/JChristensen/Timezone
 
 //US Eastern Time Zone (New York, Detroit)
 TimeChangeRule myDST = {"EDT", Second, Sun, Mar, 2, -240};    //Daylight time = UTC - 4 hours
 TimeChangeRule mySTD = {"EST", First, Sun, Nov, 2, -300};     //Standard time = UTC - 5 hours
 Timezone myTZ(myDST, mySTD);
+
+
+//Timechange rules are to tricky to add to the menu
+//leaving them hardcoded here in the software
 
 //If TimeChangeRules are already stored in EEPROM, comment out the three
 //lines above and uncomment the line below.
@@ -220,7 +238,7 @@ TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abb
   *  leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
   *  inc to change
   click mode for date setting - start with year, left shows a "Y" (setY)
-   O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2017
+   O  XOX (year 10) (year 1)  , this will work until 2069, starts over at 2018
    O  OXO
    O  OXO
     click mode month, left shows a "M" (which looks like H)  (setM)
@@ -664,9 +682,28 @@ void setup() {
     settings.intensity = INTLEVELS; // 5 levels of intensity, 0=off
     settings.updateInterval = 4; //  1,4,10,60 seconds
     settings.daylight = false; // daylight saving on/off
+    strcpy(settings.DSTabbrev,"EDT");
+    settings.DSTweek=Second;      //First, Second, Third, Fourth, or Last week of the month
+    settings.DSTdow=Sun;          //day of week, 1=Sun, 2=Mon, ... 7=Sat
+    settings.DSTmonth=Mar;        //1=Jan, 2=Feb, ... 12=Dec
+    settings.DSThour=2;           //0-23
+    settings.DSToffset=-240;      //offset from UTC in minutes
+    strcpy(settings.STDabbrev,"EST");
+    settings.STDweek=First;
+    settings.STDdow=Sun;
+    settings.STDmonth=Nov;
+    settings.STDhour=2;
+    settings.STDoffset=-300;
     saveSettings();
   }
   memcpy(&stored_settings,&settings,sizeof(settings));
+
+//US Eastern Time Zone (New York, Detroit)
+//TimeChangeRule myDST = {"EDT", Second, Sun, Mar, 2, -240};    //Daylight time = UTC - 4 hours
+//TimeChangeRule mySTD = {"EST", First, Sun, Nov, 2, -300};     //Standard time = UTC - 5 hours
+Timezone myTZ(myDST, mySTD);
+
+
 
   if (RTC.chipPresent()) {
     Serial.println(F("No rtc found"));
@@ -741,6 +778,9 @@ void setup() {
 /****************************************************************/
 // action when 
 void modeClick(){
+  time_t newTime;
+  tmElements_t newTm;
+
   Serial.print(F("in mode Click - "));
   back2time=millis()+10000; // reset in 10 seconds
   //enum mode {time, setH, set10M, set1M, mode2, set24, setDL, setTZh, setTZm, setY, setM, setD,setInt} mode;
@@ -767,12 +807,21 @@ void modeClick(){
     mode=set1M;
     Serial.println(F("Set 1 minute"));
   }else if (mode==set1M){
-    //flash all LEDs, then start clock at sec=0
+    //TODO -> VERIFY
+    //start clock at sec=0 then flash all LEDs
+    newTime=now();
+    breakTime(newTime, newTm);
+    newTm.Second=0;
+    newTime=makeTime(newTm);
+    setTime(newTime);
+    RTC.set(now());
     drawTime(3969);
     delay(500);
-    //TODO - set seconds=0
     mode=time;
+    drawNow();
     Serial.println(F("back to show time"));
+    Serial.print(F(", time is: "));
+    printTime();
   }else if (mode==set24){
     //set daylight saving on/off
     mode=setDL;
@@ -833,7 +882,7 @@ void modePressStart(){
   *  leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
   *  inc to change
   click mode for date setting - start with year, left shows a "Y" (setY)
-   O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2017
+   O  XOX (year 10) (year 1)  , this will work until 2069, starts over at 2018
    O  OXO
    O  OXO
     click mode month, left shows a "M" (which looks like H)  (setM)
@@ -866,10 +915,10 @@ void modePressStop(){
   Serial.println(F("set 12/24h"));
 }
 
-/****************************************************************/
 void incClick(){
   tmElements_t newTm;
   time_t newTime;
+  uint8_t monthLength;
 
   Serial.print(F("in inc Click - "));
   if (mode==time){
@@ -956,7 +1005,7 @@ void incClick(){
       Serial.print(F(" => "));
       newTime=now();
       breakTime(newTime, newTm);
-      if (newTm.Year <2018 || newTm.Year >2032){
+      if (newTm.Year <2018 || newTm.Year >2032){ // start over at 2032, when we get closer to that it can be increased up to 2069
 	newTm.Year=2018;
       }else{
 	newTm.Year++;
@@ -993,11 +1042,24 @@ void incClick(){
       }else{
 	newTm.Day++;
       }
-      //TODO - handle 29/30 day months
+      //TODO -> VERIFY
+      if (newTm.Month==2) { // february
+	if (LEAP_YEAR(newTm.Year)) {
+	  monthLength=29;
+	} else {
+	  monthLength=28;
+	}
+      }else{
+	monthLength=monthDays[newTm.Month-1];
+      }
+      if (newTm.Day>monthLength){
+	newTm.Day=1;
+      }
+
       newTime=makeTime(newTm);
       setTime(newTime);
       RTC.set(now());
-      Serial.println(month());
+      Serial.println(day());
     }else if (mode==setInt){
       // INC now cycles through the interval on the right, showing seconds for updates, 1,4,10,60 seconds (shows 59)
       Serial.print(F(" update interval set to "));
@@ -1047,6 +1109,8 @@ void incPressStop(){
 void loop() {
   static unsigned long lastUpdate = 0;
   unsigned long lastSecond=0,currSecond=0;
+  time_t newTime;
+  tmElements_t newTm;
 
   // keep watching the push button:
   buttonMode.tick();
@@ -1070,6 +1134,15 @@ void loop() {
     if (currSecond != lastSecond) {
       if ((millis() - lastUpdate) > settings.updateInterval * 1000) {
         lastSecond=currSecond;
+	if (mode == set1M) {
+	  //if we set the time - Keep the seconds at 0
+	  newTime=now();
+	  breakTime(newTime, newTm);
+	  newTm.Second=0;
+	  newTime=makeTime(newTm);
+	  setTime(newTime);
+	  RTC.set(now());
+	}
         /*
           Serial.print("DEBUG1:");
           Serial.print(curr_hour);
@@ -1165,9 +1238,9 @@ void loop() {
     //leftmost bottom LED stays on, right lights show "MIN" for 1sec, then minutes as 00/15/30/45 (no +/-)
     LEDAssembly[1][0] = true;
   } else if (mode == setY) {
-    //TODO
+    //TODO -> VERIFY
     //left shows a "Y" (setY)
-    // O  XOX (year 10) (year 1)  , this will work until 2059, starts over at 2018
+    // O  XOX (year 10) (year 1)  , this will work until 2069, starts over at 2018
     // O  OXO
     // O  OXO
     displayOff(false);
@@ -1188,7 +1261,7 @@ void loop() {
     drawFrame(2,(year()%100)/10,false,false);
     drawFrame(3,year()%10,false);
   } else if (mode == setM) {
-    //TODO
+    //TODO -> VERIFY
     //left shows a "M" (which looks like H)  (setM)
     // O  XOX (month10) (month1)
     // O  XXX
@@ -1211,7 +1284,7 @@ void loop() {
     drawFrame(2,(month()%100)/10,false,false);
     drawFrame(3,month()%10,false);
   } else if (mode == setD) {
-    //TODO
+    //TODO -> VERIFY
     //left shows a "D"  (setD)
     // O  XXO (day10) (day1)
     // O  XOX
