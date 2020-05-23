@@ -19,4 +19,4 @@ Did think about options for a while and noted that the PIC is in a socket which 
 
 The code here is licensed under GPL3 and is what is put on the arduino nano. It is similar behavour to the original code but have some added features to handle the rtc.
 
-
+Short demo at https://www.youtube.com/watch?v=QV_h11XrtCI
